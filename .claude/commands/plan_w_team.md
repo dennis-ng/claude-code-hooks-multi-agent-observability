@@ -42,6 +42,7 @@ GENERAL_PURPOSE_AGENT: `general-purpose`
 - **PLANNING ONLY**: Do NOT build, write code, or deploy agents. Your only output is a plan document saved to `PLAN_OUTPUT_DIRECTORY`.
 - If no `USER_PROMPT` is provided, stop and ask the user to provide it.
 - If `ORCHESTRATION_PROMPT` is provided, use it to guide team composition, task granularity, dependency structure, and parallel/sequential decisions.
+- For `feature` task types: create a git worktree using `/create_worktree_prompt <branch-name> <offset>` BEFORE deploying any agents. All agents MUST then work within the worktree directory. This enables parallel feature development without affecting the main branch. Derive the branch name from the feature (e.g., `feature-auth`, `feature-search`). Use the next available port offset (check existing worktrees with `/list_worktrees_prompt` first).
 - Carefully analyze the user's requirements provided in the USER_PROMPT variable
 - Determine the task type (chore|feature|refactor|fix|enhancement) and complexity (simple|medium|complex)
 - Think deeply (ultrathink) about the best approach to implement the requested functionality or solve the problem
@@ -226,12 +227,13 @@ IMPORTANT: **PLANNING ONLY** - Do not execute, build, or deploy. Output is a pla
 
 1. Analyze Requirements - Parse the USER_PROMPT to understand the core problem and desired outcome
 2. Understand Codebase - Without subagents, directly understand existing patterns, architecture, and relevant files
-3. Design Solution - Develop technical approach including architecture decisions and implementation strategy
-4. Define Team Members - Use `ORCHESTRATION_PROMPT` (if provided) to guide team composition. Identify from `.claude/agents/team/*.md` or use `general-purpose`. Document in plan.
-5. Define Step by Step Tasks - Use `ORCHESTRATION_PROMPT` (if provided) to guide task granularity and parallel/sequential structure. Write out tasks with IDs, dependencies, assignments. Document in plan.
-6. Generate Filename - Create a descriptive kebab-case filename based on the plan's main topic
-7. Save Plan - Write the plan to `PLAN_OUTPUT_DIRECTORY/<filename>.md`
-8. Save & Report - Follow the `Report` section to write the plan to `PLAN_OUTPUT_DIRECTORY/<filename>.md` and provide a summary of key components
+3. Worktree Setup - If the task type is `feature`, check existing worktrees with `/list_worktrees_prompt`, then create a new worktree with `/create_worktree_prompt <branch-name> <offset>`. Record the worktree path for use in all agent deployments.
+4. Design Solution - Develop technical approach including architecture decisions and implementation strategy
+5. Define Team Members - Use `ORCHESTRATION_PROMPT` (if provided) to guide team composition. Identify from `.claude/agents/team/*.md` or use `general-purpose`. Document in plan.
+6. Define Step by Step Tasks - Use `ORCHESTRATION_PROMPT` (if provided) to guide task granularity and parallel/sequential structure. Write out tasks with IDs, dependencies, assignments. Document in plan.
+7. Generate Filename - Create a descriptive kebab-case filename based on the plan's main topic
+8. Save Plan - Write the plan to `PLAN_OUTPUT_DIRECTORY/<filename>.md`
+9. Save & Report - Follow the `Report` section to write the plan to `PLAN_OUTPUT_DIRECTORY/<filename>.md` and provide a summary of key components
 
 ## Plan Format
 
@@ -283,6 +285,28 @@ Use these files to complete the task:
   - You'll orchestrate this by using the Task* Tools to manage coordination between the team members.
   - Communication is paramount. You'll use the Task* Tools to communicate with the team members and ensure they're on track to complete the plan.
 - Take note of the session id of each team member. This is how you'll reference them.
+
+### Worktree
+
+For feature work, the team lead creates a git worktree BEFORE deploying agents:
+
+1. Check existing worktrees: `/list_worktrees_prompt`
+2. Create worktree: `/create_worktree_prompt <branch-name> <next-offset>`
+3. All agent Task prompts MUST include `WORKTREE_PATH: <absolute-path-to-worktree>` at the top
+
+Example Task deployment with worktree:
+```
+Task({
+  description: "Implement auth endpoints",
+  prompt: "WORKTREE_PATH: /Users/.../trees/feature-auth\n\nImplement the auth endpoints...",
+  subagent_type: "builder"
+})
+```
+
+This ensures:
+- All agents share the same branch and files
+- Feature work is isolated from the main branch
+- Multiple features can be developed in parallel across different worktrees
 
 ### Team Members
 <list the team members you'll use to execute the plan>
