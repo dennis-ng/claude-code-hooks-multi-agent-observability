@@ -8,8 +8,23 @@
 # ///
 
 import json
+import os
 from typing import Optional, Dict, Any
-from .llm.anth import prompt_llm
+
+
+def _prompt_llm(prompt: str) -> Optional[str]:
+    """Call Anthropic API for a short summary. Returns None on any failure."""
+    try:
+        import anthropic
+        client = anthropic.Anthropic()
+        response = client.messages.create(
+            model=os.environ.get("ANTHROPIC_SUMMARIZER_MODEL", "claude-haiku-4-5-20251001"),
+            max_tokens=60,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return response.content[0].text if response.content else None
+    except Exception:
+        return None
 
 
 def generate_event_summary(event_data: Dict[str, Any]) -> Optional[str]:
@@ -54,7 +69,7 @@ Examples:
 
 Generate the summary based on the payload:"""
 
-    summary = prompt_llm(prompt)
+    summary = _prompt_llm(prompt)
 
     # Clean up the response
     if summary:
