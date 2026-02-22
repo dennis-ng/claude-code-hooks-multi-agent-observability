@@ -1,0 +1,13 @@
+# Lightweight Observability System
+# Usage: docker compose up -d --build
+# Dashboard: http://localhost:4000
+services:
+  observability:
+    build: .
+    ports:
+      - "127.0.0.1:4000:4000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - DB_PATH=/app/data/events.db
+    restart: unless-stopped

@@ -9,7 +9,7 @@
 
 """
 Multi-Agent Observability Hook Script
-Sends Claude Code hook events to the observability server.
+Sends Claude Code hook events to the lightweight observability server.
 
 Supported event types (12 total):
   SessionStart, SessionEnd, UserPromptSubmit, PreToolUse, PostToolUse,
@@ -21,161 +21,198 @@ import json
 import sys
 import os
 import argparse
-import urllib.request
-import urllib.error
 from datetime import datetime
 from utils.summarizer import generate_event_summary
 from utils.model_extractor import get_model_from_transcript
+from utils.observability_client import send_event as post_event
 
-def send_event_to_server(event_data, server_url='http://localhost:4000/events'):
-    """Send event data to the observability server."""
-    try:
-        # Prepare the request
-        req = urllib.request.Request(
-            server_url,
-            data=json.dumps(event_data).encode('utf-8'),
-            headers={
-                'Content-Type': 'application/json',
-                'User-Agent': 'Claude-Code-Hook/1.0'
-            }
-        )
-        
-        # Send the request
-        with urllib.request.urlopen(req, timeout=5) as response:
-            if response.status == 200:
-                return True
-            else:
-                print(f"Server returned status: {response.status}", file=sys.stderr)
-                return False
-                
-    except urllib.error.URLError as e:
-        print(f"Failed to send event: {e}", file=sys.stderr)
-        return False
-    except Exception as e:
-        print(f"Unexpected error: {e}", file=sys.stderr)
-        return False
 
 def main():
     # Parse command line arguments
     parser = argparse.ArgumentParser(description='Send Claude Code hook events to observability server')
     parser.add_argument('--source-app', required=True, help='Source application name')
     parser.add_argument('--event-type', required=True, help='Hook event type (PreToolUse, PostToolUse, etc.)')
-    parser.add_argument('--server-url', default='http://localhost:4000/events', help='Server URL')
-    parser.add_argument('--add-chat', action='store_true', help='Include chat transcript if available')
+    parser.add_argument('--add-chat', action='store_true', help='(Ignored) Previously included chat transcript')
     parser.add_argument('--summarize', action='store_true', help='Generate AI summary of the event')
-    
+
     args = parser.parse_args()
-    
+
     try:
         # Read hook data from stdin
         input_data = json.load(sys.stdin)
     except json.JSONDecodeError as e:
         print(f"Failed to parse JSON input: {e}", file=sys.stderr)
         sys.exit(1)
-    
-    # Extract model name from transcript (with caching)
+
+    # Extract common fields
     session_id = input_data.get('session_id', 'unknown')
+    source_app = args.source_app
+    event_type = args.event_type
+
+    # Extract model name from transcript (with caching)
     transcript_path = input_data.get('transcript_path', '')
     model_name = ''
     if transcript_path:
         model_name = get_model_from_transcript(session_id, transcript_path)
 
-    # Prepare event data for server
-    event_data = {
-        'source_app': args.source_app,
-        'session_id': session_id,
-        'hook_event_type': args.event_type,
-        'payload': input_data,
-        'timestamp': int(datetime.now().timestamp() * 1000),
-        'model_name': model_name
-    }
+    try:
+        if event_type == 'SessionStart':
+            post_event(
+                event_type="SessionStart",
+                session_id=session_id,
+                source_app=source_app,
+                name=f"session:{input_data.get('source', '')}",
+                metadata={
+                    'source': input_data.get('source', ''),
+                    'agent_type': input_data.get('agent_type', ''),
+                    'model': model_name or input_data.get('model', ''),
+                },
+            )
 
-    # Forward event-specific fields as top-level properties for easier querying.
-    # These fields are only present for certain event types.
+        elif event_type == 'SessionEnd':
+            post_event(
+                event_type="SessionEnd",
+                session_id=session_id,
+                source_app=source_app,
+                metadata={
+                    'reason': input_data.get('reason', ''),
+                },
+            )
 
-    # tool_name: PreToolUse, PostToolUse, PostToolUseFailure, PermissionRequest
-    if 'tool_name' in input_data:
-        event_data['tool_name'] = input_data['tool_name']
+        elif event_type == 'PreToolUse':
+            tool_name = input_data.get('tool_name', 'unknown')
+            tool_use_id = input_data.get('tool_use_id', '')
+            post_event(
+                event_type="PreToolUse",
+                session_id=session_id,
+                source_app=source_app,
+                name=tool_name,
+                span_id=tool_use_id,
+                input_data=input_data.get('tool_input', {}),
+            )
 
-    # tool_use_id: PreToolUse, PostToolUse, PostToolUseFailure
-    if 'tool_use_id' in input_data:
-        event_data['tool_use_id'] = input_data['tool_use_id']
+        elif event_type == 'PostToolUse':
+            tool_use_id = input_data.get('tool_use_id', '')
+            post_event(
+                event_type="PostToolUse",
+                session_id=session_id,
+                source_app=source_app,
+                span_id=tool_use_id,
+                output_data=input_data.get('tool_response', {}),
+            )
 
-    # error, is_interrupt: PostToolUseFailure
-    if 'error' in input_data:
-        event_data['error'] = input_data['error']
-    if 'is_interrupt' in input_data:
-        event_data['is_interrupt'] = input_data['is_interrupt']
+        elif event_type == 'PostToolUseFailure':
+            tool_use_id = input_data.get('tool_use_id', '')
+            post_event(
+                event_type="PostToolUseFailure",
+                session_id=session_id,
+                source_app=source_app,
+                span_id=tool_use_id,
+                output_data=input_data.get('tool_response', {}),
+                level="ERROR",
+                metadata={
+                    'error': input_data.get('error', 'Tool use failed'),
+                },
+            )
 
-    # permission_suggestions: PermissionRequest
-    if 'permission_suggestions' in input_data:
-        event_data['permission_suggestions'] = input_data['permission_suggestions']
+        elif event_type == 'SubagentStart':
+            agent_id = input_data.get('agent_id', '')
+            agent_type = input_data.get('agent_type', '')
+            post_event(
+                event_type="SubagentStart",
+                session_id=session_id,
+                source_app=source_app,
+                name=f"subagent:{agent_type}" if agent_type else "subagent",
+                span_id=agent_id,
+                metadata={
+                    'agent_type': agent_type,
+                },
+            )
 
-    # agent_id: SubagentStart, SubagentStop
-    if 'agent_id' in input_data:
-        event_data['agent_id'] = input_data['agent_id']
+        elif event_type == 'SubagentStop':
+            agent_id = input_data.get('agent_id', '')
+            post_event(
+                event_type="SubagentStop",
+                session_id=session_id,
+                source_app=source_app,
+                span_id=agent_id,
+                metadata={
+                    'agent_type': input_data.get('agent_type', ''),
+                    'stop_hook_active': input_data.get('stop_hook_active', False),
+                },
+            )
 
-    # agent_type: SessionStart, SubagentStart, SubagentStop
-    if 'agent_type' in input_data:
-        event_data['agent_type'] = input_data['agent_type']
+        elif event_type == 'UserPromptSubmit':
+            post_event(
+                event_type="UserPromptSubmit",
+                session_id=session_id,
+                source_app=source_app,
+                input_data={
+                    'prompt': input_data.get('prompt', ''),
+                },
+            )
 
-    # agent_transcript_path: SubagentStop
-    if 'agent_transcript_path' in input_data:
-        event_data['agent_transcript_path'] = input_data['agent_transcript_path']
+        elif event_type == 'Notification':
+            post_event(
+                event_type="Notification",
+                session_id=session_id,
+                source_app=source_app,
+                name=input_data.get('title', ''),
+                metadata={
+                    'notification_type': input_data.get('notification_type', ''),
+                    'message': input_data.get('message', ''),
+                    'title': input_data.get('title', ''),
+                },
+            )
 
-    # stop_hook_active: Stop, SubagentStop
-    if 'stop_hook_active' in input_data:
-        event_data['stop_hook_active'] = input_data['stop_hook_active']
+        elif event_type == 'PermissionRequest':
+            post_event(
+                event_type="PermissionRequest",
+                session_id=session_id,
+                source_app=source_app,
+                name=input_data.get('tool_name', ''),
+                input_data=input_data.get('tool_input', {}),
+                metadata={
+                    'permission_suggestions': input_data.get('permission_suggestions', ''),
+                },
+            )
 
-    # notification_type: Notification
-    if 'notification_type' in input_data:
-        event_data['notification_type'] = input_data['notification_type']
+        elif event_type == 'Stop':
+            post_event(
+                event_type="Stop",
+                session_id=session_id,
+                source_app=source_app,
+                metadata={
+                    'stop_hook_active': input_data.get('stop_hook_active', False),
+                },
+            )
 
-    # custom_instructions: PreCompact
-    if 'custom_instructions' in input_data:
-        event_data['custom_instructions'] = input_data['custom_instructions']
+        elif event_type == 'PreCompact':
+            post_event(
+                event_type="PreCompact",
+                session_id=session_id,
+                source_app=source_app,
+                metadata={
+                    'trigger': input_data.get('trigger', ''),
+                    'custom_instructions': input_data.get('custom_instructions', ''),
+                },
+            )
 
-    # source: SessionStart
-    if 'source' in input_data:
-        event_data['source'] = input_data['source']
+        else:
+            # Unknown event type -- log as generic event
+            post_event(
+                event_type=event_type,
+                session_id=session_id,
+                source_app=source_app,
+                input_data=input_data,
+            )
 
-    # reason: SessionEnd
-    if 'reason' in input_data:
-        event_data['reason'] = input_data['reason']
-    
-    # Handle --add-chat option
-    if args.add_chat and 'transcript_path' in input_data:
-        transcript_path = input_data['transcript_path']
-        if os.path.exists(transcript_path):
-            # Read .jsonl file and convert to JSON array
-            chat_data = []
-            try:
-                with open(transcript_path, 'r') as f:
-                    for line in f:
-                        line = line.strip()
-                        if line:
-                            try:
-                                chat_data.append(json.loads(line))
-                            except json.JSONDecodeError:
-                                pass  # Skip invalid lines
-                
-                # Add chat to event data
-                event_data['chat'] = chat_data
-            except Exception as e:
-                print(f"Failed to read transcript: {e}", file=sys.stderr)
-    
-    # Generate summary if requested
-    if args.summarize:
-        summary = generate_event_summary(event_data)
-        if summary:
-            event_data['summary'] = summary
-        # Continue even if summary generation fails
-    
-    # Send to server
-    success = send_event_to_server(event_data, args.server_url)
-    
+    except Exception as e:
+        print(f"Failed to send event: {e}", file=sys.stderr)
+
     # Always exit with 0 to not block Claude Code operations
     sys.exit(0)
+
 
 if __name__ == '__main__':
     main()

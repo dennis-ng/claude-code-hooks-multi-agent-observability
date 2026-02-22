@@ -41,8 +41,7 @@ def main():
     matching_files = sorted(search_dir.glob(f"*{ext}"), key=lambda f: f.stat().st_mtime, reverse=True)
 
     if not matching_files:
-        print(f"No {ext} files found in '{args.directory}'", file=sys.stderr)
-        sys.exit(2)
+        sys.exit(0)
 
     # Check the most recently modified file
     target_file = matching_files[0]

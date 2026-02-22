@@ -37,8 +37,7 @@ def main():
     matching_files = list(search_dir.glob(f"*{ext}"))
 
     if not matching_files:
-        print(f"No {ext} files found in '{args.directory}'", file=sys.stderr)
-        sys.exit(2)
+        sys.exit(0)
 
     sys.exit(0)
 

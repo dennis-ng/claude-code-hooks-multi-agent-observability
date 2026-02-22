@@ -1,114 +1,76 @@
-# Multi-Agent Observability System
+# Lightweight Observability System
 # Usage: just <recipe>
 
 set dotenv-load
 set quiet
 
-server_port := env("SERVER_PORT", "4000")
-client_port := env("CLIENT_PORT", "5173")
 project_root := justfile_directory()
 
 # List available recipes
 default:
     @just --list
 
-# ─── System ──────────────────────────────────────────────
+# ─── Docker ────────────────────────────────────────────────
 
-# Start server + client (foreground, Ctrl+C to stop)
+# Start observability system
 start:
-    ./scripts/start-system.sh
+    docker compose up -d --build
+    @echo "Observability starting at http://localhost:4000"
 
-# Stop all processes and clean up
+# Stop observability system
 stop:
-    ./scripts/reset-system.sh
+    docker compose down
 
-# Stop then start
+# Restart observability system
 restart: stop start
 
-# ─── Server (Bun, port 4000) ────────────────────────────
+# View logs
+logs:
+    docker compose logs -f observability
 
-# Install server dependencies
-server-install:
-    cd {{project_root}}/apps/server && bun install
+# Check container status
+status:
+    docker compose ps
 
-# Start server in dev mode (watch)
-server:
-    cd {{project_root}}/apps/server && SERVER_PORT={{server_port}} bun run dev
-
-# Start server in production mode
-server-prod:
-    cd {{project_root}}/apps/server && SERVER_PORT={{server_port}} bun run start
-
-# Typecheck server
-server-typecheck:
-    cd {{project_root}}/apps/server && bun run typecheck
-
-# ─── Client (Vue + Vite, port 5173) ─────────────────────
-
-# Install client dependencies
-client-install:
-    cd {{project_root}}/apps/client && bun install
-
-# Start client dev server
-client:
-    cd {{project_root}}/apps/client && VITE_PORT={{client_port}} bun run dev
-
-# Build client for production
-client-build:
-    cd {{project_root}}/apps/client && bun run build
-
-# Preview production build
-client-preview:
-    cd {{project_root}}/apps/client && bun run preview
-
-# ─── Install ─────────────────────────────────────────────
-
-# Install all dependencies (server + client)
-install: server-install client-install
-
-# ─── Database ────────────────────────────────────────────
-
-# Clear SQLite WAL files
-db-clean-wal:
-    rm -f {{project_root}}/apps/server/events.db-wal {{project_root}}/apps/server/events.db-shm
-    @echo "WAL files removed"
-
-# Delete the entire events database
-db-reset:
-    rm -f {{project_root}}/apps/server/events.db {{project_root}}/apps/server/events.db-wal {{project_root}}/apps/server/events.db-shm
-    @echo "Database reset"
-
-# ─── Testing ─────────────────────────────────────────────
-
-# Send a test event to the server
-test-event:
-    curl -s -X POST http://localhost:{{server_port}}/events \
-      -H "Content-Type: application/json" \
-      -d '{"source_app":"test","session_id":"test-1234","hook_event_type":"PreToolUse","payload":{"tool_name":"Bash","tool_input":{"command":"echo hello"}}}' \
-      | head -c 200
-    @echo ""
-
-# Check server health
-health:
-    @curl -sf http://localhost:{{server_port}}/health > /dev/null 2>&1 \
-      && echo "Server: UP (port {{server_port}})" \
-      || echo "Server: DOWN (port {{server_port}})"
-    @curl -sf http://localhost:{{client_port}} > /dev/null 2>&1 \
-      && echo "Client: UP (port {{client_port}})" \
-      || echo "Client: DOWN (port {{client_port}})"
+# Reset everything (delete all data)
+reset:
+    docker compose down -v
+    rm -rf {{project_root}}/data/
+    @echo "All data deleted"
 
 # ─── Hooks ───────────────────────────────────────────────
 
-# Test a hook script directly (e.g. just hook-test pre_tool_use)
+# Test a hook script (e.g. just hook-test pre_tool_use)
 hook-test name:
-    echo '{"session_id":"test-hook","tool_name":"Bash"}' | uv run {{project_root}}/.claude/hooks/{{name}}.py
+    echo '{"session_id":"test-hook","tool_name":"Bash","tool_input":{"command":"echo hello"},"tool_use_id":"tu_test1"}' | uv run {{project_root}}/.claude/hooks/{{name}}.py
+
+# Send a test event to the observability server
+test-event:
+    curl -s -X POST http://localhost:4000/api/events \
+      -H "Content-Type: application/json" \
+      -d '{"session_id":"test-123","project_dir":"/tmp/test","source_app":"test","event_type":"SessionStart","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'"}'
+    @echo ""
+    @echo "Check dashboard at http://localhost:4000"
 
 # List all hook scripts
 hooks:
     @ls -1 {{project_root}}/.claude/hooks/*.py | xargs -I{} basename {} .py
 
-# ─── Open ────────────────────────────────────────────────
+# ─── Health ──────────────────────────────────────────────
 
-# Open the client dashboard in browser
+# Check if observability server is running
+health:
+    @curl -sf http://localhost:4000/health > /dev/null 2>&1 \
+      && echo "Observability: UP (http://localhost:4000)" \
+      || echo "Observability: DOWN — run 'just start'"
+
+# Open dashboard in browser
 open:
-    open http://localhost:{{client_port}}
+    open http://localhost:4000
+
+# ─── Cleanup ─────────────────────────────────────────────
+
+# Clean local hook log files
+clean-logs:
+    rm -rf {{project_root}}/logs/*
+    @echo "Local hook logs cleared"
