@@ -8,12 +8,12 @@ hooks:
     - hooks:
         - type: command
           command: >-
-            uv run $CLAUDE_PROJECT_DIR/.claude/hooks/validators/validate_new_file.py
+            uv run $HOME/.claude/hooks/validators/validate_new_file.py
             --directory specs
             --extension .md
         - type: command
           command: >-
-            uv run $CLAUDE_PROJECT_DIR/.claude/hooks/validators/validate_file_contains.py
+            uv run $HOME/.claude/hooks/validators/validate_file_contains.py
             --directory specs
             --extension .md
             --contains '## Task Description'
