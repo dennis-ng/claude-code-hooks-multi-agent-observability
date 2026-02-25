@@ -47,46 +47,37 @@ install:
     from pathlib import Path
 
     repo = Path("{{project_root}}")
+    gcfg = repo / "global_claude_config"
     claude_dir = Path.home() / ".claude"
     claude_dir.mkdir(exist_ok=True)
 
-    # 1. Symlink hooks scripts
-    target = claude_dir / "hooks"
-    source = repo / "hooks"
-    if target.is_symlink():
-        print(f"✓ ~/.claude/hooks already symlinked to {target.resolve()}")
-    elif target.is_dir():
-        backup = claude_dir / "hooks.bak"
-        shutil.move(str(target), str(backup))
-        print(f"  Backed up existing hooks to ~/.claude/hooks.bak")
+    def symlink(name, source):
+        target = claude_dir / name
+        if target.is_symlink():
+            if target.resolve() == source.resolve():
+                print(f"✓ ~/.claude/{name} already symlinked")
+                return
+            target.unlink()
+        elif target.is_dir():
+            shutil.move(str(target), str(target) + ".bak")
+            print(f"  Backed up ~/.claude/{name} to ~/.claude/{name}.bak")
+        elif target.exists():
+            target.rename(str(target) + ".bak")
+            print(f"  Backed up ~/.claude/{name} to ~/.claude/{name}.bak")
         target.symlink_to(source)
-        print(f"✓ Symlinked: ~/.claude/hooks -> {source}")
-    else:
-        target.symlink_to(source)
-        print(f"✓ Symlinked: ~/.claude/hooks -> {source}")
+        print(f"✓ Symlinked: ~/.claude/{name} -> {source}")
 
-    # 2. Symlink commands
-    cmd_target = claude_dir / "commands"
-    cmd_source = repo / "commands"
-    if cmd_target.is_symlink():
-        print(f"✓ ~/.claude/commands already symlinked to {cmd_target.resolve()}")
-    elif cmd_target.is_dir():
-        backup = claude_dir / "commands.bak"
-        shutil.move(str(cmd_target), str(backup))
-        print(f"  Backed up existing commands to ~/.claude/commands.bak")
-        cmd_target.symlink_to(cmd_source)
-        print(f"✓ Symlinked: ~/.claude/commands -> {cmd_source}")
-    else:
-        cmd_target.symlink_to(cmd_source)
-        print(f"✓ Symlinked: ~/.claude/commands -> {cmd_source}")
+    symlink("hooks", gcfg / "hooks")
+    symlink("commands", gcfg / "commands")
+    symlink("CLAUDE.md", gcfg / "CLAUDE.md")
 
-    # 3. Merge hooks config into settings.json
+    # Merge hooks config into settings.json
     settings_path = claude_dir / "settings.json"
     settings = {}
     if settings_path.exists():
         settings = json.loads(settings_path.read_text())
 
-    hooks_config = json.loads((repo / "hooks-config.json").read_text())
+    hooks_config = json.loads((gcfg / "hooks-config.json").read_text())
     settings["hooks"] = hooks_config["hooks"]
 
     settings_path.write_text(json.dumps(settings, indent=2) + "\n")
@@ -94,7 +85,7 @@ install:
     print()
     print("Done! Restart Claude Code for hooks to take effect.")
 
-# Uninstall hooks: remove symlink + remove hooks from settings
+# Uninstall: remove symlinks + remove hooks from settings
 uninstall:
     #!/usr/bin/env python3
     import json
@@ -102,29 +93,17 @@ uninstall:
 
     claude_dir = Path.home() / ".claude"
 
-    # 1. Remove symlink
-    target = claude_dir / "hooks"
-    if target.is_symlink():
-        target.unlink()
-        print("✓ Removed symlink: ~/.claude/hooks")
-        backup = claude_dir / "hooks.bak"
-        if backup.is_dir():
-            backup.rename(target)
-            print("✓ Restored backup: ~/.claude/hooks.bak -> ~/.claude/hooks")
-    else:
-        print("  ~/.claude/hooks is not a symlink — skipped")
-
-    # 2. Remove commands symlink
-    cmd_target = claude_dir / "commands"
-    if cmd_target.is_symlink():
-        cmd_target.unlink()
-        print("✓ Removed symlink: ~/.claude/commands")
-        backup = claude_dir / "commands.bak"
-        if backup.is_dir():
-            backup.rename(cmd_target)
-            print("✓ Restored backup: ~/.claude/commands.bak -> ~/.claude/commands")
-    else:
-        print("  ~/.claude/commands is not a symlink — skipped")
+    for name in ["hooks", "commands", "CLAUDE.md"]:
+        target = claude_dir / name
+        if target.is_symlink():
+            target.unlink()
+            print(f"✓ Removed symlink: ~/.claude/{name}")
+            backup = Path(str(target) + ".bak")
+            if backup.exists():
+                backup.rename(target)
+                print(f"✓ Restored backup: ~/.claude/{name}.bak")
+        else:
+            print(f"  ~/.claude/{name} is not a symlink — skipped")
 
     # 3. Remove hooks from settings.json
     settings_path = claude_dir / "settings.json"
@@ -142,7 +121,7 @@ uninstall:
 
 # Test a hook script (e.g. just hook-test pre_tool_use)
 hook-test name:
-    echo '{"session_id":"test-hook","tool_name":"Bash","tool_input":{"command":"echo hello"},"tool_use_id":"tu_test1"}' | uv run {{project_root}}/hooks/{{name}}.py
+    echo '{"session_id":"test-hook","tool_name":"Bash","tool_input":{"command":"echo hello"},"tool_use_id":"tu_test1"}' | uv run {{project_root}}/global_claude_config/hooks/{{name}}.py
 
 # Send a test event to the observability server
 test-event:
@@ -154,7 +133,7 @@ test-event:
 
 # List all hook scripts
 hooks:
-    @ls -1 {{project_root}}/hooks/*.py | xargs -I{} basename {} .py
+    @ls -1 {{project_root}}/global_claude_config/hooks/*.py | xargs -I{} basename {} .py
 
 # ─── Health ──────────────────────────────────────────────
 
