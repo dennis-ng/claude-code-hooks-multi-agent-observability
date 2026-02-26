@@ -160,21 +160,48 @@ async def start_session_endpoint(request: StartSessionRequest):
 
 
 @app.post("/api/sessions/{session_id}/resume")
-async def resume_session_endpoint(session_id: str, request: ResumeSessionRequest):
-    """Resume an existing Claude Code session."""
+async def resume_session_endpoint(session_id: str):
+    """Resume an existing Claude Code session.
+
+    Looks up the session's project_dir from the database.
+    """
+    db = await get_db()
     try:
-        result = await resume_session(session_id, request.project_dir)
+        # Look up session by primary key first, then by session_id field
+        session = await get_session(db, session_id)
+        if not session:
+            # Try looking up by session_id field
+            cursor = await db.execute(
+                "SELECT * FROM sessions WHERE session_id = ? LIMIT 1",
+                (session_id,),
+            )
+            row = await cursor.fetchone()
+            session = dict(row) if row else None
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        project_dir = session.get("project_dir", ".")
+        actual_session_id = session.get("session_id", session_id)
+        result = await resume_session(actual_session_id, project_dir)
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        await db.close()
 
 
 @app.post("/api/sessions/discover")
-async def discover_sessions():
+async def discover_sessions_endpoint():
     """Discover and import sessions from the filesystem."""
     from server.discovery import discover_sessions as do_discover
-    result = await do_discover()
-    return result
+    db = await get_db()
+    try:
+        result = await do_discover(db)
+        return result
+    except Exception as e:
+        logger.exception("Discovery failed")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        await db.close()
 
 
 @app.get("/api/stats")

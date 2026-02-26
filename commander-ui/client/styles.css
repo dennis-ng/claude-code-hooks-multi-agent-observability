@@ -740,3 +740,57 @@ body {
         min-width: 60px;
     }
 }
+
+/* ============================================================
+   Header Buttons & Start Session Form
+   ============================================================ */
+.header-buttons {
+    display: flex;
+    gap: 8px;
+}
+
+.start-session-form {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    margin-bottom: 24px;
+}
+
+.form-group {
+    margin-bottom: 14px;
+}
+
+.form-label {
+    display: block;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    margin-bottom: 4px;
+}
+
+.form-input {
+    width: 100%;
+    padding: 8px 12px;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 0.9rem;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 150ms ease;
+}
+
+.form-input:focus {
+    border-color: var(--border-focus);
+}
+
+.form-input::placeholder {
+    color: var(--text-muted);
+}
+
+.form-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 16px;
+}

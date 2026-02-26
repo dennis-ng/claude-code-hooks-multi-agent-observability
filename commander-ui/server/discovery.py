@@ -303,11 +303,44 @@ def _slug_to_path(slug: str) -> str:
 
     Claude Code encodes project paths by replacing '/' with '-'.
     Example: '-Users-user-projects-myapp' -> '/Users/user/projects/myapp'
+
+    Strategy: recursively try all possible splits, preferring the one that
+    produces a valid path on disk. Uses longest-segment-first to handle
+    directory names containing hyphens (e.g. 'claude-code-hooks-multi-agent-observability').
     """
-    # The slug starts with '-' which corresponds to the leading '/' of an abs path
-    if slug.startswith("-"):
-        return slug.replace("-", "/", 1).replace("-", "/")
-    return slug.replace("-", "/")
+    if not slug.startswith("-"):
+        return slug
+
+    parts = slug[1:].split("-")  # strip leading '-', split on '-'
+    if not parts:
+        return slug
+
+    def _rebuild(parts_remaining: list, current_path: str) -> str:
+        if not parts_remaining:
+            return current_path
+
+        # Try longest possible segment first (all remaining parts joined by '-')
+        # then progressively shorter segments
+        for take in range(len(parts_remaining), 0, -1):
+            segment = "-".join(parts_remaining[:take])
+            candidate = current_path + "/" + segment
+            rest = parts_remaining[take:]
+
+            if not rest:
+                # Last segment — check if full path exists
+                if Path(candidate).exists():
+                    return candidate
+            else:
+                # More segments remain — check if this is a valid directory
+                if Path(candidate).is_dir():
+                    result = _rebuild(rest, candidate)
+                    if Path(result).exists():
+                        return result
+
+        # Fallback: take one part as a path segment
+        return _rebuild(parts_remaining[1:], current_path + "/" + parts_remaining[0])
+
+    return _rebuild(parts, "")
 
 
 async def _find_existing_session(db, session_id: str) -> Optional[dict]:

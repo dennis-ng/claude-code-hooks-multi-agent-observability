@@ -39,6 +39,10 @@ const App = {
             refreshTimer: null,
             activityLoading: false,
             copySuccess: false,
+            showStartForm: false,
+            newSessionDir: '',
+            newSessionPrompt: '',
+            startingSession: false,
         };
     },
 
@@ -97,7 +101,7 @@ const App = {
 
         async loadStats() {
             try {
-                const data = await api('/sessions/stats');
+                const data = await api('/stats');
                 this.stats = data || {};
             } catch (e) {
                 // stats endpoint may not exist; silently ignore
@@ -129,13 +133,39 @@ const App = {
             }
         },
 
+        async startNewSession() {
+            if (!this.newSessionDir.trim()) {
+                this.error = 'Project directory is required';
+                return;
+            }
+            this.startingSession = true;
+            try {
+                await api('/sessions/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        project_dir: this.newSessionDir.trim(),
+                        prompt: this.newSessionPrompt.trim() || null,
+                    }),
+                });
+                this.showStartForm = false;
+                this.newSessionDir = '';
+                this.newSessionPrompt = '';
+                await this.refresh();
+            } catch (e) {
+                this.error = e.message;
+            } finally {
+                this.startingSession = false;
+            }
+        },
+
         async viewSession(session) {
             this.selectedSession = session;
             this.currentView = 'detail';
             this.selectedSessionActivity = [];
             this.activityLoading = true;
             try {
-                const data = await api(`/sessions/${session.session_id}/activity`);
+                const data = await api(`/sessions/${session.id}/activity`);
                 this.selectedSessionActivity = Array.isArray(data) ? data : (data.activity || data.events || []);
             } catch (e) {
                 this.selectedSessionActivity = [];
@@ -252,10 +282,15 @@ const App = {
                         <span class="stat-label">Needs Attention</span>
                     </div>
                 </div>
-                <button class="btn btn-primary" @click="discover" :disabled="loading">
-                    <span v-if="loading">Discovering...</span>
-                    <span v-else>Discover Sessions</span>
-                </button>
+                <div class="header-buttons">
+                    <button class="btn btn-primary" @click="discover" :disabled="loading">
+                        <span v-if="loading">Discovering...</span>
+                        <span v-else>Discover Sessions</span>
+                    </button>
+                    <button class="btn btn-secondary" @click="showStartForm = !showStartForm">
+                        + New Session
+                    </button>
+                </div>
             </div>
         </header>
 
@@ -265,6 +300,38 @@ const App = {
                 {{ error }}
                 <button class="btn-close" @click="error = null">&times;</button>
             </div>
+
+            <!-- Start New Session Form -->
+            <section v-if="showStartForm" class="start-session-form">
+                <h2 class="section-title">Start New Session</h2>
+                <div class="form-group">
+                    <label class="form-label">Project Directory</label>
+                    <input
+                        v-model="newSessionDir"
+                        type="text"
+                        class="form-input"
+                        placeholder="/path/to/your/project"
+                        @keydown.enter="startNewSession"
+                    />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Initial Prompt (optional)</label>
+                    <input
+                        v-model="newSessionPrompt"
+                        type="text"
+                        class="form-input"
+                        placeholder="e.g. fix the login bug"
+                        @keydown.enter="startNewSession"
+                    />
+                </div>
+                <div class="form-actions">
+                    <button class="btn btn-primary" @click="startNewSession" :disabled="startingSession">
+                        <span v-if="startingSession">Starting...</span>
+                        <span v-else>Start Session</span>
+                    </button>
+                    <button class="btn btn-ghost" @click="showStartForm = false">Cancel</button>
+                </div>
+            </section>
 
             <!-- Needs Attention Section -->
             <section v-if="needsAttentionSessions.length > 0" class="attention-section">
