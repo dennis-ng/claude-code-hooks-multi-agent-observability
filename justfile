@@ -12,10 +12,11 @@ default:
 
 # ─── Docker ────────────────────────────────────────────────
 
-# Start observability system
+# Start observability + commander-ui via Docker
 start:
     docker compose up -d --build
-    @echo "Observability starting at http://localhost:4000"
+    @echo "Observability: http://localhost:4000"
+    @echo "Commander UI:  http://localhost:4200"
 
 # Stop observability system
 stop:
@@ -137,15 +138,29 @@ hooks:
 
 # ─── Health ──────────────────────────────────────────────
 
-# Check if observability server is running
+# Check if services are running
 health:
     @curl -sf http://localhost:4000/health > /dev/null 2>&1 \
       && echo "Observability: UP (http://localhost:4000)" \
       || echo "Observability: DOWN — run 'just start'"
+    @curl -sf http://localhost:4200/health > /dev/null 2>&1 \
+      && echo "Commander UI:  UP (http://localhost:4200)" \
+      || echo "Commander UI:  DOWN — run 'just start' or 'just commander-ui'"
 
 # Open dashboard in browser
 open:
     open http://localhost:4000
+
+# ─── Commander UI ─────────────────────────────────────────
+
+# Install commander-ui dependencies
+install-commander-ui:
+    cd {{project_root}}/commander-ui && uv sync
+    @echo "Commander UI installed. Run: just commander-ui"
+
+# Start commander-ui web app (local, no Docker)
+commander-ui:
+    cd {{project_root}}/commander-ui && uv run uvicorn server.main:app --host 0.0.0.0 --port 4200 --reload
 
 # ─── Cleanup ─────────────────────────────────────────────
 
