@@ -1,6 +1,7 @@
-# Lightweight Observability System
+# Multi-Agent Observability + Commander UI
 # Usage: docker compose up -d --build
-# Dashboard: http://localhost:4000
+# Observability: http://localhost:4000
+# Commander UI:  http://localhost:4200
 services:
   observability:
     build: .
@@ -10,4 +11,18 @@ services:
       - ./data:/app/data
     environment:
       - DB_PATH=/app/data/events.db
+    restart: unless-stopped
+
+  commander-ui:
+    build:
+      context: .
+      dockerfile: commander-ui/Dockerfile
+    ports:
+      - "127.0.0.1:4200:4200"
+    volumes:
+      - ./commander-ui/data:/app/data
+      - ${HOME}/.claude:/root/.claude:ro
+    environment:
+      - DB_PATH=/app/data/commander.db
+      - CLAUDE_HOME=/root/.claude
     restart: unless-stopped

@@ -264,6 +264,10 @@ ai_docs/haiku45/*
 !ai_docs/sonnet45/answers.md
 !ai_docs/haiku45/answers.md
 
+# Commander UI
+commander-ui/data/
+commander-ui/.venv/
+
 # Claude Code session data
 .claude/data/
 
